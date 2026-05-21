@@ -1,0 +1,557 @@
+
+
+import csv
+import json
+import re
+import time
+from urllib.parse import urljoin, urlparse, parse_qs, urlencode, urlunparse
+
+from selenium import webdriver
+from selenium.webdriver import FirefoxOptions
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.common.exceptions import (
+    TimeoutException,
+    NoSuchElementException,
+    StaleElementReferenceException,
+    WebDriverException,
+)
+
+
+START_URL = "https://www.noon.com/egypt-en/grocery-store/cooking-and-baking-supplies/oils-vinegars-and-salad-dressings/" 
+BASE_URL = "https://www.noon.com"
+OUTPUT_CSV = "noonoils1.csv"
+
+SOURCE = "noon"
+CATEGORY = "Grocery"
+SUB_CATEGORY = "oils"
+
+HEADLESS = False
+MAX_PAGES = None  # للتجربة خليها 2 مثلا، وللكل سيبها None
+WAIT_SECONDS = 25
+SCROLL_PAUSE = 1.2
+
+
+def make_driver():
+    options = FirefoxOptions()
+
+    if HEADLESS:
+        options.add_argument("--headless")
+
+    options.set_preference("intl.accept_languages", "ar-EG,ar,en-US,en")
+    options.set_preference("dom.webdriver.enabled", False)
+
+    driver = webdriver.Firefox(options=options)
+    driver.implicitly_wait(5)
+    driver.maximize_window()
+    return driver
+
+
+def clean(text):
+    if not text:
+        return None
+    text = re.sub(r"\s+", " ", str(text)).strip()
+    return text or None
+
+
+def normalize_url(href):
+    if not href:
+        return None
+
+    href = urljoin(BASE_URL, href)
+    parsed = urlparse(href)
+    query = parse_qs(parsed.query)
+
+    clean_query = {}
+    if "o" in query:
+        clean_query["o"] = query["o"][0]
+
+    return urlunparse(
+        (
+            parsed.scheme,
+            parsed.netloc,
+            parsed.path,
+            "",
+            urlencode(clean_query),
+            "",
+        )
+    )
+
+
+def build_page_url(page_number):
+    if page_number == 1:
+        return START_URL
+
+    parsed = urlparse(START_URL)
+    query = parse_qs(parsed.query)
+
+    query["page"] = [str(page_number)]
+    query.setdefault("sort[by]", ["popularity"])
+    query.setdefault("sort[dir]", ["desc"])
+
+    return urlunparse(
+        (
+            parsed.scheme,
+            parsed.netloc,
+            parsed.path,
+            "",
+            urlencode(query, doseq=True),
+            "",
+        )
+    )
+
+
+def accept_popups(driver):
+    selectors = [
+        (By.XPATH, "//button[contains(., 'Accept') or contains(., 'قبول') or contains(., 'موافق')]"),
+        (By.XPATH, "//button[contains(., 'Got it') or contains(., 'حسناً')]"),
+        (By.CSS_SELECTOR, "[data-qa*='cookie'] button"),
+        (By.CSS_SELECTOR, "button[aria-label*='close' i]"),
+        (By.CSS_SELECTOR, "button[aria-label*='إغلاق']"),
+    ]
+
+    for by, selector in selectors:
+        try:
+            elements = driver.find_elements(by, selector)
+            for element in elements[:3]:
+                if element.is_displayed() and element.is_enabled():
+                    driver.execute_script("arguments[0].click();", element)
+                    time.sleep(0.4)
+        except WebDriverException:
+            continue
+
+
+def wait_for_products(driver):
+    WebDriverWait(driver, WAIT_SECONDS).until(
+        EC.presence_of_element_located((By.CSS_SELECTOR, "a[href*='/p/']"))
+    )
+
+
+def collect_product_links(driver):
+    links = []
+
+    try:
+        anchors = driver.find_elements(By.CSS_SELECTOR, "a[href*='/p/']")
+    except WebDriverException:
+        return links
+
+    for anchor in anchors:
+        try:
+            href = normalize_url(anchor.get_attribute("href"))
+            if href and "/p/" in href:
+                links.append(href)
+        except StaleElementReferenceException:
+            continue
+
+    return list(dict.fromkeys(links))
+
+
+def scroll_until_loaded(driver):
+    last_count = 0
+    stable_rounds = 0
+
+    for _ in range(45):
+        accept_popups(driver)
+
+        try:
+            driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+        except WebDriverException:
+            break
+
+        time.sleep(SCROLL_PAUSE)
+
+        current_count = len(collect_product_links(driver))
+
+        if current_count == last_count:
+            stable_rounds += 1
+        else:
+            stable_rounds = 0
+
+        last_count = current_count
+
+        if stable_rounds >= 3:
+            break
+
+
+def scrape_listing_links(driver):
+    all_links = []
+    seen = set()
+    page_number = 1
+
+    while True:
+        if MAX_PAGES and page_number > MAX_PAGES:
+            break
+
+        page_url = build_page_url(page_number)
+        print(f"[INFO] Scraping listing page {page_number}: {page_url}")
+
+        try:
+            driver.get(page_url)
+            accept_popups(driver)
+            wait_for_products(driver)
+            scroll_until_loaded(driver)
+        except TimeoutException:
+            print(f"[INFO] No products found on page {page_number}. Stop.")
+            break
+        except WebDriverException as e:
+            print(f"[WARN] Failed to load page {page_number}: {e}")
+            break
+
+        links = collect_product_links(driver)
+        new_links = [link for link in links if link not in seen]
+
+        print(f"[INFO] Found {len(new_links)} new products.")
+
+        if not new_links:
+            break
+
+        all_links.extend(new_links)
+        seen.update(new_links)
+        page_number += 1
+
+    return all_links
+
+
+def first_text(driver, selectors):
+    for by, selector in selectors:
+        try:
+            value = clean(driver.find_element(by, selector).text)
+            if value:
+                return value
+        except NoSuchElementException:
+            continue
+        except WebDriverException:
+            continue
+
+    return None
+
+
+def get_body_lines(driver):
+    try:
+        body_text = driver.find_element(By.TAG_NAME, "body").text
+        return [clean(line) for line in body_text.splitlines() if clean(line)]
+    except WebDriverException:
+        return []
+
+
+def value_after_label(lines, labels):
+    for index, line in enumerate(lines):
+        for label in labels:
+            if line == label and index + 1 < len(lines):
+                return lines[index + 1]
+
+            if line.startswith(label + " "):
+                return clean(line.replace(label, "", 1))
+
+            if line.startswith(label + ":"):
+                return clean(line.replace(label + ":", "", 1))
+
+    return None
+
+
+def parse_price(text):
+    if not text:
+        return None
+
+    patterns = [
+        r"(?:جنيه|EGP)\s*([0-9][0-9,]*(?:\.[0-9]+)?)",
+        r"([0-9][0-9,]*(?:\.[0-9]+)?)\s*(?:جنيه|EGP)",
+    ]
+
+    for pattern in patterns:
+        match = re.search(pattern, text, re.IGNORECASE)
+        if match:
+            return match.group(1).replace(",", "")
+
+    return None
+
+
+def parse_rating(text):
+    if not text:
+        return None, None
+
+    patterns = [
+        r"\b([0-5](?:\.[0-9])?)\s+([0-9,]+)\s*(?:تقييم|تقييمات|Ratings?|Reviews?)",
+        r"\b([0-5](?:\.[0-9])?)\b.*?([0-9,]+)\s*(?:تقييم|تقييمات|Ratings?|Reviews?)",
+    ]
+
+    for pattern in patterns:
+        match = re.search(pattern, text, re.IGNORECASE)
+        if match:
+            return match.group(1), match.group(2).replace(",", "")
+
+    rating_match = re.search(r"\b([0-5](?:\.[0-9])?)\b", text)
+    if rating_match and ("تقييم" in text or "rating" in text.lower()):
+        return rating_match.group(1), None
+
+    return None, None
+
+
+def parse_weight(text):
+    if not text:
+        return None
+
+    pattern = (
+        r"([0-9]+(?:[.,][0-9]+)?\s*"
+        r"(?:كيلوجرام|كيلو جرام|كيلو|كجم|كغ|kg|"
+        r"غرام|جرام|جم|g|"
+        r"ملليلتر|مللي|مل|ml|"
+        r"لتر|liter|litre|l))"
+    )
+
+    match = re.search(pattern, text, re.IGNORECASE)
+
+    if match:
+        return clean(match.group(1).replace(",", "."))
+
+    return None
+
+
+def parse_units(text):
+    if not text:
+        return None
+
+    patterns = [
+        r"(?:عبوة من|pack of)\s*([0-9]+)",
+        r"([0-9]+)\s*(?:قطعة|قطع|pcs|pieces|count|عبوة|علبة|زجاجة)",
+    ]
+
+    for pattern in patterns:
+        match = re.search(pattern, text, re.IGNORECASE)
+        if match:
+            return match.group(1)
+
+    return None
+
+
+def extract_json_ld(driver):
+    data = {}
+
+    try:
+        scripts = driver.find_elements(By.CSS_SELECTOR, "script[type='application/ld+json']")
+    except WebDriverException:
+        return data
+
+    for script in scripts:
+        try:
+            raw = script.get_attribute("innerHTML")
+            if not raw:
+                continue
+
+            parsed = json.loads(raw)
+            items = parsed if isinstance(parsed, list) else [parsed]
+
+            for item in items:
+                if not isinstance(item, dict):
+                    continue
+
+                if item.get("@type") == "Product":
+                    data["product_name"] = clean(item.get("name"))
+
+                    brand = item.get("brand")
+                    if isinstance(brand, dict):
+                        data["brand"] = clean(brand.get("name"))
+                    elif isinstance(brand, str):
+                        data["brand"] = clean(brand)
+
+                    offers = item.get("offers")
+                    if isinstance(offers, dict):
+                        data["price"] = clean(offers.get("price"))
+
+                    rating = item.get("aggregateRating")
+                    if isinstance(rating, dict):
+                        data["rating"] = clean(rating.get("ratingValue"))
+                        data["rating_count"] = clean(
+                            rating.get("ratingCount") or rating.get("reviewCount")
+                        )
+
+        except Exception:
+            continue
+
+    return data
+
+
+def scrape_product(driver, product_link):
+    row = {
+        "source": SOURCE,
+        "category": CATEGORY,
+        "sub_category": SUB_CATEGORY,
+        "product_name": None,
+        "product_link": product_link,
+        "price": None,
+        "brand": None,
+        "item_weight": None,
+        "unit_count": None,
+        "number_of_items": None,
+        "package_weight": None,
+        "rating": None,
+        "rating_count": None,
+    }
+
+    try:
+        driver.get(product_link)
+        accept_popups(driver)
+
+        WebDriverWait(driver, WAIT_SECONDS).until(
+            EC.presence_of_element_located((By.TAG_NAME, "body"))
+        )
+
+        time.sleep(1)
+    except TimeoutException:
+        print(f"[WARN] Timeout product page: {product_link}")
+        return row
+    except WebDriverException as e:
+        print(f"[WARN] Failed product page: {product_link} | {e}")
+        return row
+
+    lines = get_body_lines(driver)
+    full_text = "\n".join(lines)
+
+    json_ld = extract_json_ld(driver)
+
+    row["product_name"] = json_ld.get("product_name") or first_text(
+        driver,
+        [
+            (By.CSS_SELECTOR, "[data-qa*='product-name']"),
+            (By.CSS_SELECTOR, "[data-qa*='product-title']"),
+            (By.TAG_NAME, "h1"),
+        ],
+    )
+
+    row["brand"] = json_ld.get("brand") or first_text(
+        driver,
+        [
+            (By.CSS_SELECTOR, "[data-qa*='brand']"),
+            (By.CSS_SELECTOR, "a[href*='brand']"),
+            (By.XPATH, "//h1/preceding::a[1]"),
+        ],
+    )
+
+    row["price"] = json_ld.get("price") or parse_price(full_text)
+
+    parsed_rating, parsed_rating_count = parse_rating(full_text)
+    row["rating"] = json_ld.get("rating") or parsed_rating
+    row["rating_count"] = json_ld.get("rating_count") or parsed_rating_count
+
+    item_weight = value_after_label(
+        lines,
+        [
+            "الحجم",
+            "الوزن",
+            "وزن السلعة",
+            "السعة",
+            "Item Weight",
+            "Size",
+            "Net Weight",
+            "Capacity",
+            "Volume",
+        ],
+    )
+
+    package_weight = value_after_label(
+        lines,
+        [
+            "وزن العبوة",
+            "Package Weight",
+            "Package weight",
+            "وزن الشحنة",
+        ],
+    )
+
+    unit_count = value_after_label(
+        lines,
+        [
+            "عدد الوحدات",
+            "عدد القطع",
+            "Unit Count",
+            "Number of Items",
+            "Pack Count",
+        ],
+    )
+
+    row["item_weight"] = (
+        item_weight
+        or parse_weight(row["product_name"])
+        or parse_weight(full_text)
+    )
+
+    row["package_weight"] = package_weight
+
+    row["unit_count"] = (
+        unit_count
+        or parse_units(row["product_name"])
+        or parse_units(full_text)
+    )
+
+    row["number_of_items"] = row["unit_count"]
+
+    return row
+
+
+def save_to_csv(rows):
+    fieldnames = [
+        "source",
+        "category",
+        "sub_category",
+        "product_name",
+        "product_link",
+        "price",
+        "brand",
+        "item_weight",
+        "unit_count",
+        "number_of_items",
+        "package_weight",
+        "rating",
+        "rating_count",
+    ]
+
+    with open(OUTPUT_CSV, "w", newline="", encoding="utf-8-sig") as file:
+        writer = csv.DictWriter(file, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(rows)
+
+
+def main():
+    driver = make_driver()
+    rows = []
+
+    try:
+        product_links = scrape_listing_links(driver)
+        print(f"[INFO] Total product links collected: {len(product_links)}")
+
+        for index, product_link in enumerate(product_links, start=1):
+            print(f"[INFO] Scraping product {index}/{len(product_links)}")
+
+            try:
+                product_data = scrape_product(driver, product_link)
+                rows.append(product_data)
+            except Exception as e:
+                print(f"[WARN] Skipped one product because of error: {e}")
+                rows.append(
+                    {
+                        "source": SOURCE,
+                        "category": CATEGORY,
+                        "sub_category": SUB_CATEGORY,
+                        "product_name": None,
+                        "product_link": product_link,
+                        "price": None,
+                        "brand": None,
+                        "item_weight": None,
+                        "unit_count": None,
+                        "number_of_items": None,
+                        "package_weight": None,
+                        "rating": None,
+                        "rating_count": None,
+                    }
+                )
+
+        save_to_csv(rows)
+        print(f"[DONE] Saved {len(rows)} products to {OUTPUT_CSV}")
+
+    finally:
+        driver.quit()
+
+
+if __name__ == "__main__":
+    main()
