@@ -9,12 +9,16 @@ sources AS (
 ),
 dates AS (
     SELECT * FROM {{ ref('dim_date') }}
+),
+categories AS (
+    SELECT * FROM {{ ref('dim_category') }}
 )
 SELECT
     ROW_NUMBER() OVER (ORDER BY p.product_id, s.source_id, d.date_id) AS price_sk,
     p.product_id,
     s.source_id,
     d.date_id,
+    c.category_id,
     pr.price,
     pr.price_per_unit
 FROM prices pr
@@ -24,3 +28,6 @@ LEFT JOIN sources s
     ON pr.source = s.source_name
 LEFT JOIN dates d
     ON CAST(pr.date AS DATE) = d.full_date
+LEFT JOIN categories c
+    ON pr.category = c.category
+    AND pr.sub_category = c.sub_category
