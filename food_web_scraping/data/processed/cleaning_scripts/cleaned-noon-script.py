@@ -2,10 +2,14 @@ import pandas as pd
 import numpy as np
 from deep_translator import GoogleTranslator
 import re
+from pathlib import Path
 
-url = "https://raw.githubusercontent.com/beshoy-shohdy/Food_Price_Monitoring/refs/heads/main/food_web_scraping/noon/noon_products.csv"
+BASE_DIR = Path(__file__).resolve().parent
+PROJECT_ROOT = BASE_DIR.parents[2]  
+RAW_PATH = PROJECT_ROOT / "noon" / "noon_products.csv"
+print(f"Reading data from: {RAW_PATH}")
 
-df = pd.read_csv(url)
+df = pd.read_csv(RAW_PATH)
 
 # إزالة الصفوف اللي فيها SKU فاضي
 df = df[df["sku"].notna()]
@@ -39,21 +43,6 @@ df["product_name"] = df["product_name"].replace(
     np.nan
 )
 
-# safe translator function
-def translate_column(series):
-    translator = GoogleTranslator(source='auto', target='en')
-    
-    def translate_text(x):
-        if pd.isna(x):
-            return np.nan
-        try:
-            return translator.translate(str(x))
-        except:
-            return x
-    
-    return series.apply(translate_text)
-
-df["product_name"] = translate_column(df["product_name"])
 df["product_name"] = df["product_name"].fillna("unknown")
 
 # extract weight numbers
@@ -70,4 +59,5 @@ else:
 df["item_weight"] = df["item_weight"].fillna(median_weight).astype(int)
 
 # save final file
-df.to_csv("cleaned_noon_data.csv", index=False)
+df.to_csv(PROJECT_ROOT/ "data" / "processed" / "clean_data" / "noon_clean.csv", index=False)
+df.to_parquet(PROJECT_ROOT / "data" / "processed" / "parquet" / "noon_clean.parquet", index=False, engine="pyarrow")
