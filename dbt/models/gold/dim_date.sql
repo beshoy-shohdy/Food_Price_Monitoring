@@ -1,6 +1,8 @@
 WITH source AS (
     SELECT DISTINCT
-        CAST(date AS DATE) AS full_date
+        CAST(
+            DATEADD(SECOND, CAST(date AS BIGINT) / 1000000000, '1970-01-01')
+        AS DATE) AS full_date
     FROM {{ ref('silver_unified_prices') }}
 )
 SELECT
