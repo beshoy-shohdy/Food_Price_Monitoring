@@ -27,7 +27,7 @@ LEFT JOIN products p
 LEFT JOIN sources s
     ON pr.source = s.source_name
 LEFT JOIN dates d
-    ON CAST(DATEADD(SECOND, CAST(pr.date AS BIGINT) / 1000000000, '1970-01-01') AS DATE) = d.full_date
+    ON CAST(pr.date AS DATE) = d.full_date
 LEFT JOIN categories c
     ON pr.category = c.category
     AND pr.sub_category = c.sub_category
