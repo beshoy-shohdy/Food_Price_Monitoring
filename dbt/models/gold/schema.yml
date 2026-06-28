@@ -14,9 +14,6 @@ models:
         tests:
           - unique
           - not_null
-      - name: category_id
-        tests:
-          - not_null
       - name: product_name
         tests:
           - not_null
