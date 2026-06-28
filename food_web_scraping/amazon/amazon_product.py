@@ -20,18 +20,20 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from webdriver_manager.chrome import ChromeDriverManager
 from selenium.webdriver.chrome.service import Service
+from pathlib import Path
 
 # =========================
 # Load input
 # =========================
 print("Loading input...")
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
-csv_path = os.path.join(BASE_DIR, "amazon_categories_updated.csv")
+BASE_DIR = Path("/opt/airflow/project/food_web_scraping/amazon")
+
+csv_path = BASE_DIR / "amazon_categories_updated.csv"
 
 df = pd.read_csv(csv_path)
 
-output_file = os.path.join(BASE_DIR, "amazon_products.csv")
+output_file = BASE_DIR / "amazon_products.csv"
 
 # لو الملف موجود، كمل عليه
 if os.path.exists(output_file):
@@ -171,9 +173,9 @@ from selenium.webdriver.support import expected_conditions as EC
 # =========================
 # Load products
 # =========================
-df = pd.read_csv(os.path.join(BASE_DIR, "amazon_products.csv"))
+df = pd.read_csv(BASE_DIR / "amazon_products.csv")
 
-output_file = os.path.join(BASE_DIR, "amazon_product_details.csv")
+output_file = BASE_DIR / "amazon_product_details.csv"
 
 # Resume
 if os.path.exists(output_file):
@@ -311,9 +313,9 @@ import pandas as pd
 import re
 import datetime
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-input_file = os.path.join(BASE_DIR, "amazon_product_details.csv")
-output_file = os.path.join(BASE_DIR, "final_amazon_product_details.csv")
+BASE_DIR = Path("/opt/airflow/project/food_web_scraping/amazon")
+input_file = BASE_DIR / "amazon_product_details.csv"
+output_file = BASE_DIR / "final_amazon_product_details.csv"
 
 df = pd.read_csv(input_file)
 

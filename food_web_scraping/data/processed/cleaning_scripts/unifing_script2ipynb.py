@@ -12,8 +12,8 @@ from pathlib import Path
 
 BASE_DIR = Path("/opt/airflow/project/food_web_scraping/data/processed")
 
-OUTPUT_PATH_CSV = BASE_DIR / "clean_data" / "full_data_clean.csv"
-OUTPUT_PATH_PARQUET = BASE_DIR / "parquet" / "full_data_clean.parquet"
+OUTPUT_PATH_CSV = BASE_DIR / "clean_data" / "unified_full_data.csv"
+OUTPUT_PATH_PARQUET = BASE_DIR / "parquet" / "unified_full_data.parquet"
 
 OUTPUT_PATH_CSV.parent.mkdir(parents=True, exist_ok=True)
 OUTPUT_PATH_PARQUET.parent.mkdir(parents=True, exist_ok=True)
@@ -26,9 +26,6 @@ noon = pd.read_csv(BASE_DIR / "clean_data"/ "noon_clean.csv")
 wtp = pd.read_csv(BASE_DIR / "clean_data"/ "wfp_egypt_clean.csv")
 
 merged_df = pd.concat([amazon, noon, wtp], ignore_index=True)
-merged_df.to_csv(BASE_DIR / "clean_data"/ "full_data_clean.csv", index=False)
-merged_df.to_parquet(BASE_DIR / "parquet"/ "full_data_clean.parquet", index=False, engine="pyarrow")
-
 
 def get_product_type(product_name, sub_category):
     if pd.isna(product_name):
@@ -150,12 +147,10 @@ def get_product_type(product_name, sub_category):
     return None
 
 
-def clean_unified():
+def clean_unified(df):
     print("=" * 55)
     print("  Final Unified Cleaning")
     print("=" * 55)
-
-    df = merged_df.copy()
     print(f"  Raw shape           : {df.shape}")
 
     # ─────────────────────────────────────────────────────
@@ -246,7 +241,7 @@ def clean_unified():
 
 
 if __name__ == "__main__":
-    df = clean_unified()
+    df = clean_unified(merged_df)
 
     # Save
     df.to_csv(OUTPUT_PATH_CSV, index=False)

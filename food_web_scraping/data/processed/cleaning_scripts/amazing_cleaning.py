@@ -252,8 +252,8 @@ def clean_amazon(path: str) -> pd.DataFrame:
 if __name__ == "__main__":
     df_amazon = clean_amazon(RAW_PATH)
 
-    PARQUET_DIR = BASE_DIR / "parquet"
-    CSV_DIR = BASE_DIR / "clean_data"
+    PARQUET_DIR = PROCESSED_DIR / "parquet"
+    CSV_DIR = PROCESSED_DIR / "clean_data"
 
     PARQUET_DIR.mkdir(parents=True, exist_ok=True)
     CSV_DIR.mkdir(parents=True, exist_ok=True)
