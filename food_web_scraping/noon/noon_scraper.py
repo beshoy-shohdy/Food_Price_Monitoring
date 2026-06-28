@@ -10,6 +10,8 @@ import re
 import time
 from urllib.parse import urljoin, urlparse, urlunparse
 
+from httpx import options
+from httpx import options
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
@@ -113,15 +115,16 @@ HEADLESS = False
 WAIT_SECONDS = 1
 SCROLL_PAUSE = 1.2
 
-
 # =========================
 # DRIVER
 # =========================
 def make_driver():
     options = ChromeOptions()
 
-    if HEADLESS:
-        options.add_argument("--headless")
+    options.add_argument("--headless=new")
+    options.add_argument("--no-sandbox")
+    options.add_argument("--disable-dev-shm-usage")
+    options.add_argument("--disable-gpu")
 
     # Force English (US)
     options.add_argument("--lang=en-US")

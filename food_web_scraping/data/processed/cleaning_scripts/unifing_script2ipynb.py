@@ -5,12 +5,29 @@
   Output: unified_prices_final.csv + .parquet
 =============================================================
 """
-
 import pandas as pd
 import numpy as np
 import os
+from pathlib import Path
 
-INPUT_PATH = "/content/full_data_clean.csv"
+BASE_DIR = Path("/opt/airflow/project/food_web_scraping/data/processed")
+
+OUTPUT_PATH_CSV = BASE_DIR / "clean_data" / "full_data_clean.csv"
+OUTPUT_PATH_PARQUET = BASE_DIR / "parquet" / "full_data_clean.parquet"
+
+OUTPUT_PATH_CSV.parent.mkdir(parents=True, exist_ok=True)
+OUTPUT_PATH_PARQUET.parent.mkdir(parents=True, exist_ok=True)
+
+
+print(f"Processed directory: {BASE_DIR}")
+
+amazon = pd.read_csv(BASE_DIR / "clean_data"/ "amazon_clean.csv")
+noon = pd.read_csv(BASE_DIR / "clean_data"/ "noon_clean.csv")
+wtp = pd.read_csv(BASE_DIR / "clean_data"/ "wfp_egypt_clean.csv")
+
+merged_df = pd.concat([amazon, noon, wtp], ignore_index=True)
+merged_df.to_csv(BASE_DIR / "clean_data"/ "full_data_clean.csv", index=False)
+merged_df.to_parquet(BASE_DIR / "parquet"/ "full_data_clean.parquet", index=False, engine="pyarrow")
 
 
 def get_product_type(product_name, sub_category):
@@ -133,12 +150,12 @@ def get_product_type(product_name, sub_category):
     return None
 
 
-def clean_unified(path):
+def clean_unified():
     print("=" * 55)
     print("  Final Unified Cleaning")
     print("=" * 55)
 
-    df = pd.read_csv(path)
+    df = merged_df.copy()
     print(f"  Raw shape           : {df.shape}")
 
     # ─────────────────────────────────────────────────────
@@ -229,16 +246,10 @@ def clean_unified(path):
 
 
 if __name__ == "__main__":
-    df = clean_unified(INPUT_PATH)
+    df = clean_unified()
 
     # Save
-    df.to_csv("/content/unified_full_data.csv", index=False)
-    df.to_parquet("/content/unified_full_data.parquet", index=False, engine="pyarrow")
-
-    from google.colab import files
-    files.download("/content/unified_full_data.csv")
-    files.download("/content/unified_full_data.parquet")
+    df.to_csv(OUTPUT_PATH_CSV, index=False)
+    df.to_parquet(OUTPUT_PATH_PARQUET, index=False, engine="pyarrow")
 
     print("\n✅ Done!")
-
-

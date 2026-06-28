@@ -16,8 +16,10 @@ import re
 import os
 from pathlib import Path
 
-RAW_PATH = Path.cwd().parents[2] / "amazon" / "final_amazon_product_details.csv"
-PROCESSED_DIR = Path.cwd().parents[2] / "data" / "processed"
+BASE_DIR = Path("/opt/airflow/project/food_web_scraping")
+
+RAW_PATH = BASE_DIR / "amazon" / "final_amazon_product_details.csv"
+PROCESSED_DIR = BASE_DIR / "data" / "processed"
 os.makedirs(PROCESSED_DIR, exist_ok=True)
 
 
@@ -250,7 +252,13 @@ def clean_amazon(path: str) -> pd.DataFrame:
 if __name__ == "__main__":
     df_amazon = clean_amazon(RAW_PATH)
 
-    df_amazon.to_parquet(Path.cwd().parent / "parquet" / "amazon_clean.parquet", index=False, engine="pyarrow")
-    df_amazon.to_csv(Path.cwd().parent / "clean_data" / "amazon_clean.csv", index=False)
+    PARQUET_DIR = BASE_DIR / "parquet"
+    CSV_DIR = BASE_DIR / "clean_data"
+
+    PARQUET_DIR.mkdir(parents=True, exist_ok=True)
+    CSV_DIR.mkdir(parents=True, exist_ok=True)
+
+    df_amazon.to_parquet(PARQUET_DIR / "amazon_clean.parquet", index=False, engine="pyarrow")
+    df_amazon.to_csv(CSV_DIR / "amazon_clean.csv", index=False)
 
     print("\n✅ Done!")

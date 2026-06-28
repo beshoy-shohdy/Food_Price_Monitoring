@@ -18,13 +18,20 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+from webdriver_manager.chrome import ChromeDriverManager
+from selenium.webdriver.chrome.service import Service
 
 # =========================
 # Load input
 # =========================
-df = pd.read_csv("amazon_categories_updated.csv")
+print("Loading input...")
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
-output_file = "amazon_products.csv"
+csv_path = os.path.join(BASE_DIR, "amazon_categories_updated.csv")
+
+df = pd.read_csv(csv_path)
+
+output_file = os.path.join(BASE_DIR, "amazon_products.csv")
 
 # لو الملف موجود، كمل عليه
 if os.path.exists(output_file):
@@ -37,12 +44,23 @@ else:
 # =========================
 # Setup Selenium
 # =========================
-options = Options()
-options.add_argument("--start-maximized")
 
-driver = webdriver.Chrome(options=options)
+options = Options()
+
+options.add_argument("--headless=new")
+options.add_argument("--no-sandbox")
+options.add_argument("--disable-dev-shm-usage")
+options.add_argument("--disable-gpu")
+options.add_argument("--window-size=1920,1080")
+options.add_argument("--blink-settings=imagesEnabled=false")
+
+service = Service(ChromeDriverManager().install())
+
+driver = webdriver.Chrome(service=service, options=options)
 wait = WebDriverWait(driver, 10)
 
+driver.set_page_load_timeout(30)
+driver.set_script_timeout(30)
 # =========================
 # Helper: save instantly
 # =========================
@@ -68,7 +86,10 @@ try:
 
         print(f"\nStart: {sub_category}")
 
-        driver.get(url)
+        try:
+            driver.get(url)
+        except Exception as e:
+            print("Page load failed:", e)
 
         while True:
             time.sleep(2)
@@ -150,9 +171,9 @@ from selenium.webdriver.support import expected_conditions as EC
 # =========================
 # Load products
 # =========================
-df = pd.read_csv("amazon_products.csv")
+df = pd.read_csv(os.path.join(BASE_DIR, "amazon_products.csv"))
 
-output_file = "amazon_product_details.csv"
+output_file = os.path.join(BASE_DIR, "amazon_product_details.csv")
 
 # Resume
 if os.path.exists(output_file):
@@ -290,8 +311,9 @@ import pandas as pd
 import re
 import datetime
 
-input_file = "amazon_product_details.csv"   
-output_file = "final_amazon_product_details.csv"
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+input_file = os.path.join(BASE_DIR, "amazon_product_details.csv")
+output_file = os.path.join(BASE_DIR, "final_amazon_product_details.csv")
 
 df = pd.read_csv(input_file)
 

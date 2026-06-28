@@ -1,6 +1,5 @@
 import pandas as pd
 import numpy as np
-from deep_translator import GoogleTranslator
 import re
 from pathlib import Path
 
